@@ -14,6 +14,18 @@ The client can prefill pairing fields from query params:
 - `pair_payload`: raw JSON string (URL-encoded)
 - `relay_url`: optional relay URL override/prefill
 
+## Web push notifications
+
+After pairing:
+1. Click `Enable Push` in the UI.
+2. Allow browser notification permission.
+3. The client subscribes and registers the subscription with the relay.
+4. The client remembers pairing state in `localStorage` and restores it on next load.
+
+Requirements:
+- Client must run in a secure context (`https://...`).
+- Relay must expose VAPID config via `GET /v1/push/config` (enabled when VAPID env vars are set).
+
 ## Security posture
 
 - Avoid third-party scripts.

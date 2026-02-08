@@ -12,5 +12,7 @@ button { margin-top: 10px; padding: 10px 12px; border: 1px solid #333; border-ra
 .composer { display: flex; gap: 8px; margin-top: 10px; }
 .composer input { flex: 1; }
 .pair-details { margin-top: 10px; padding: 10px; border-radius: 8px; background: #f5f7fa; border: 1px solid #d9e0ea; font-size: 0.95em; }
+.push-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.push-actions .status { margin-top: 0; }
 code { background: #eef2f7; padding: 2px 5px; border-radius: 4px; }
 .curl-hint { margin: 8px 0 0; padding: 8px; background: #10151d; color: #dce6f8; border-radius: 8px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
