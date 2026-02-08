@@ -91,6 +91,42 @@ function relayPath(path, params = {}) {
   return url.toString();
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function claimPairingOnRelay() {
+  const claimBody = {
+    node_device_id: state.nodeDeviceId,
+    pair_code: state.pairCode,
+    client_device_id: state.clientDeviceId,
+  };
+
+  let lastErr = "pairing claim failed";
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    const res = await fetch(relayPath("/v1/pairing/claim"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(claimBody),
+    });
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+
+    if (res.ok) return data;
+
+    const detail = (data && data.detail) ? data.detail : `pairing claim failed (${res.status})`;
+    lastErr = detail;
+    if (res.status !== 404 || attempt === 6) break;
+    await sleep(500);
+  }
+
+  throw new Error(lastErr);
+}
+
 function setPairDetails() {
   els.pairDetails.hidden = false;
   els.nodeDeviceId.textContent = state.nodeDeviceId;
@@ -143,8 +179,9 @@ async function pair() {
     if (!state.relayUrl) throw new Error("Missing relayUrl");
     if (!state.nodeDeviceId || !state.pairCode || !state.pskB64) throw new Error("Incomplete pairing payload");
 
+    await claimPairingOnRelay();
     state.paired = true;
-    els.pairStatus.textContent = "Paired. UI is now polling the relay inbox.";
+    els.pairStatus.textContent = "Paired and claimed. UI is now polling the relay inbox.";
     setPairDetails();
     addMessage(`[system] paired; web inbox=${state.clientDeviceId}; local node=${state.nodeDeviceId}`);
     startPolling();
