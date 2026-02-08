@@ -24,6 +24,40 @@ let state = {
   pollInFlight: false,
 };
 
+function decodeUrlsafeB64ToString(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padLen = (4 - (normalized.length % 4)) % 4;
+  const padded = normalized + "=".repeat(padLen);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function hydrateFromQueryParams() {
+  const params = new URLSearchParams(window.location.search);
+  const payloadB64 = params.get("pair_b64");
+  const payloadRaw = params.get("pair_payload");
+  const relayFromQuery = params.get("relay_url");
+
+  if (relayFromQuery && !els.relayUrl.value.trim()) {
+    els.relayUrl.value = relayFromQuery;
+  }
+
+  if (payloadB64) {
+    try {
+      els.pairingPayload.value = decodeUrlsafeB64ToString(payloadB64);
+      return;
+    } catch (err) {
+      els.pairStatus.textContent = "Failed to decode pair_b64 URL param.";
+      return;
+    }
+  }
+
+  if (payloadRaw) {
+    els.pairingPayload.value = payloadRaw;
+  }
+}
+
 function addMessage(text) {
   const div = document.createElement("div");
   div.className = "msg";
@@ -162,3 +196,5 @@ els.btnSend.addEventListener("click", sendMessage);
 els.msgInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendMessage();
 });
+
+hydrateFromQueryParams();

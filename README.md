@@ -7,6 +7,13 @@ Goal: a simple chat-like UI that:
 
 v1 is kept intentionally static: no build step required.
 
+## Pairing URL params
+
+The client can prefill pairing fields from query params:
+- `pair_b64`: URL-safe base64 encoded pairing JSON (preferred)
+- `pair_payload`: raw JSON string (URL-encoded)
+- `relay_url`: optional relay URL override/prefill
+
 ## Security posture
 
 - Avoid third-party scripts.
