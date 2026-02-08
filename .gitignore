@@ -1,0 +1,14 @@
+# Node / web
+node_modules/
+dist/
+build/
+
+# Local runtime/debug
+.local/
+*.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
