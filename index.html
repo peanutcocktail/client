@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>bus</title>
+
+  <!--
+    TODO(security): re-enable CSP before production.
+    The strict CSP is temporarily disabled during deployment/testing across variable relay URLs.
+  -->
+  <!--
+  <meta http-equiv="Content-Security-Policy"
+        content="
+          default-src 'none';
+          script-src 'self';
+          style-src 'self';
+          img-src 'self' data:;
+          connect-src 'self' https://api.example.com http://localhost:* http://127.0.0.1:*;
+          manifest-src 'self';
+          worker-src 'self';
+          base-uri 'none';
+          frame-ancestors 'none';
+          form-action 'none';
+        ">
+  -->
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+
+    <section class="panel">
+      <label>
+        Base URL
+        <input id="relayUrl" placeholder="https://api.example.com" />
+      </label>
+      <label>
+	Payload
+        <textarea id="pairingPayload" rows="6" placeholder='{"v":1, ...}'></textarea>
+      </label>
+      <button id="btnPair">OK</button>
+      <div id="pairStatus" class="status"></div>
+      <div id="pairDetails" class="pair-details" hidden>
+        <div>
+          Local node device ID:
+          <code id="nodeDeviceId"></code>
+        </div>
+        <div>
+          Web inbox device ID:
+          <code id="inboxDeviceId"></code>
+        </div>
+        <pre id="curlHint" class="curl-hint"></pre>
+      </div>
+    </section>
+    <section class="panel">
+      <div id="messages" class="messages"></div>
+      <div class="composer">
+        <input id="msgInput" placeholder="" />
+        <button id="btnSend">OK</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

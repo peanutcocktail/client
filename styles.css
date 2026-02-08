@@ -1,0 +1,16 @@
+body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 0; background: #fafafa; }
+.app { max-width: 720px; margin: 0 auto; padding: 16px; }
+.header h1 { margin: 0; }
+.subtitle { margin-top: 4px; color: #555; }
+.panel { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin-top: 12px; }
+label { display: block; margin-top: 10px; }
+input, textarea { width: 100%; box-sizing: border-box; padding: 8px; margin-top: 6px; border: 1px solid #ccc; border-radius: 8px; }
+button { margin-top: 10px; padding: 10px 12px; border: 1px solid #333; border-radius: 10px; background: #fff; cursor: pointer; }
+.messages { height: 240px; overflow: auto; border: 1px solid #eee; border-radius: 8px; padding: 8px; background: #fcfcfc; }
+.msg { margin: 6px 0; padding: 6px 8px; border-radius: 8px; background: #fff; border: 1px solid #eee; }
+.status { margin-top: 8px; color: #555; font-size: 0.95em; }
+.composer { display: flex; gap: 8px; margin-top: 10px; }
+.composer input { flex: 1; }
+.pair-details { margin-top: 10px; padding: 10px; border-radius: 8px; background: #f5f7fa; border: 1px solid #d9e0ea; font-size: 0.95em; }
+code { background: #eef2f7; padding: 2px 5px; border-radius: 4px; }
+.curl-hint { margin: 8px 0 0; padding: 8px; background: #10151d; color: #dce6f8; border-radius: 8px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
