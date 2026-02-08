@@ -42,6 +42,16 @@
       </label>
       <button id="btnPair">OK</button>
       <div id="pairStatus" class="status"></div>
+      <div class="scan-actions">
+        <button id="btnScanQr" type="button">Scan QR (Camera)</button>
+        <button id="btnScanPhoto" type="button">Scan QR (Photo)</button>
+      </div>
+      <input id="qrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
+      <div id="scanStatus" class="status"></div>
+      <div id="qrScannerWrap" class="scanner-wrap" hidden>
+        <div id="qrScanner"></div>
+        <button id="btnStopScan" type="button">Stop Scan</button>
+      </div>
       <div id="pairDetails" class="pair-details" hidden>
         <div>
           Local node device ID:
@@ -67,6 +77,7 @@
     </section>
   </main>
 
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

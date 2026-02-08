@@ -14,5 +14,8 @@ button { margin-top: 10px; padding: 10px 12px; border: 1px solid #333; border-ra
 .pair-details { margin-top: 10px; padding: 10px; border-radius: 8px; background: #f5f7fa; border: 1px solid #d9e0ea; font-size: 0.95em; }
 .push-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .push-actions .status { margin-top: 0; }
+.scan-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.scanner-wrap { margin-top: 8px; padding: 10px; border: 1px solid #d9e0ea; border-radius: 8px; background: #f7fafc; }
+#qrScanner { width: 100%; max-width: 320px; min-height: 240px; }
 code { background: #eef2f7; padding: 2px 5px; border-radius: 4px; }
 .curl-hint { margin: 8px 0 0; padding: 8px; background: #10151d; color: #dce6f8; border-radius: 8px; overflow: auto; white-space: pre-wrap; word-break: break-word; }

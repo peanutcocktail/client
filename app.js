@@ -3,6 +3,12 @@ const els = {
   pairingPayload: document.getElementById("pairingPayload"),
   btnPair: document.getElementById("btnPair"),
   pairStatus: document.getElementById("pairStatus"),
+  btnScanQr: document.getElementById("btnScanQr"),
+  btnScanPhoto: document.getElementById("btnScanPhoto"),
+  btnStopScan: document.getElementById("btnStopScan"),
+  scanStatus: document.getElementById("scanStatus"),
+  qrScannerWrap: document.getElementById("qrScannerWrap"),
+  qrPhotoInput: document.getElementById("qrPhotoInput"),
   pairDetails: document.getElementById("pairDetails"),
   nodeDeviceId: document.getElementById("nodeDeviceId"),
   inboxDeviceId: document.getElementById("inboxDeviceId"),
@@ -44,6 +50,8 @@ let state = {
   pollTimer: null,
   pollInFlight: false,
   pushEnabled: false,
+  qrScanner: null,
+  qrScanning: false,
 };
 
 function decodeUrlsafeB64ToString(value) {
@@ -61,22 +69,20 @@ function hydrateFromQueryParams() {
   const payloadRaw = params.get("pair_payload");
   const relayFromQuery = params.get("relay_url");
 
-  if (relayFromQuery && !els.relayUrl.value.trim()) {
-    els.relayUrl.value = relayFromQuery;
-  }
-
-  if (payloadB64) {
-    try {
-      els.pairingPayload.value = decodeUrlsafeB64ToString(payloadB64);
-      return;
-    } catch (err) {
+  try {
+    applyPairingFromQueryString(params.toString(), true);
+    return;
+  } catch {
+    if (relayFromQuery && !els.relayUrl.value.trim()) {
+      els.relayUrl.value = relayFromQuery;
+    }
+    if (payloadB64) {
       els.pairStatus.textContent = "Failed to decode pair_b64 URL param.";
       return;
     }
-  }
-
-  if (payloadRaw) {
-    els.pairingPayload.value = payloadRaw;
+    if (payloadRaw) {
+      els.pairingPayload.value = payloadRaw;
+    }
   }
 }
 
@@ -117,6 +123,20 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isIOSDevice() {
+  const ua = navigator.userAgent || "";
+  return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function isStandaloneWebApp() {
+  try {
+    if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) return true;
+  } catch {
+    // Ignore.
+  }
+  return window.navigator.standalone === true;
+}
+
 function urlBase64ToUint8Array(base64String) {
   const normalized = base64String.replace(/-/g, "+").replace(/_/g, "/");
   const padLen = (4 - (normalized.length % 4)) % 4;
@@ -131,6 +151,159 @@ function urlBase64ToUint8Array(base64String) {
 
 function setPushStatus(text) {
   els.pushStatus.textContent = text;
+}
+
+function setScanStatus(text) {
+  els.scanStatus.textContent = text;
+}
+
+function applyPairingPayloadObject(payload, preserveRelayIfSet = true) {
+  if (!payload || typeof payload !== "object") return false;
+  if (!payload.v || !payload.node_device_id || !payload.pair_code || !payload.psk_b64) return false;
+  els.pairingPayload.value = JSON.stringify(payload);
+  if (payload.relay_url && (!preserveRelayIfSet || !els.relayUrl.value.trim())) {
+    els.relayUrl.value = String(payload.relay_url);
+  }
+  return true;
+}
+
+function applyPairingFromQueryString(queryString, preserveRelayIfSet = true) {
+  const params = new URLSearchParams(queryString);
+  const payloadB64 = params.get("pair_b64");
+  const payloadRaw = params.get("pair_payload");
+  const relayFromQuery = params.get("relay_url");
+
+  if (relayFromQuery && (!preserveRelayIfSet || !els.relayUrl.value.trim())) {
+    els.relayUrl.value = relayFromQuery;
+  }
+  if (payloadB64) {
+    const decoded = decodeUrlsafeB64ToString(payloadB64);
+    const parsed = JSON.parse(decoded);
+    return applyPairingPayloadObject(parsed, preserveRelayIfSet);
+  }
+  if (payloadRaw) {
+    const parsed = JSON.parse(payloadRaw);
+    return applyPairingPayloadObject(parsed, preserveRelayIfSet);
+  }
+  return false;
+}
+
+function applyPairingFromScannedText(rawText) {
+  const value = String(rawText || "").trim();
+  if (!value) return false;
+
+  try {
+    const parsed = JSON.parse(value);
+    if (applyPairingPayloadObject(parsed, false)) return true;
+  } catch {
+    // Not raw payload JSON.
+  }
+
+  try {
+    const asUrl = new URL(value);
+    if (applyPairingFromQueryString(asUrl.search, false)) return true;
+  } catch {
+    // Not URL.
+  }
+
+  try {
+    const decoded = decodeUrlsafeB64ToString(value);
+    const parsed = JSON.parse(decoded);
+    if (applyPairingPayloadObject(parsed, false)) return true;
+  } catch {
+    // Not pair_b64.
+  }
+
+  return false;
+}
+
+function ensureQrScannerInstance() {
+  if (!window.Html5Qrcode) {
+    throw new Error("QR scanner library failed to load.");
+  }
+  if (!state.qrScanner) {
+    state.qrScanner = new Html5Qrcode("qrScanner");
+  }
+  return state.qrScanner;
+}
+
+async function stopQrCameraScan() {
+  if (!state.qrScanner || !state.qrScanning) {
+    els.qrScannerWrap.hidden = true;
+    return;
+  }
+  try {
+    await state.qrScanner.stop();
+  } catch {
+    // Ignore stop errors.
+  }
+  try {
+    await state.qrScanner.clear();
+  } catch {
+    // Ignore clear errors.
+  }
+  state.qrScanner = null;
+  state.qrScanning = false;
+  els.qrScannerWrap.hidden = true;
+}
+
+async function startQrCameraScan() {
+  if (state.qrScanning) return;
+  try {
+    const scanner = ensureQrScannerInstance();
+    els.qrScannerWrap.hidden = false;
+    setScanStatus("Opening camera...");
+    state.qrScanning = true;
+
+    await scanner.start(
+      { facingMode: "environment" },
+      {
+        fps: 10,
+        qrbox: { width: 240, height: 240 },
+        aspectRatio: 1.0,
+      },
+      async (decodedText) => {
+        const ok = applyPairingFromScannedText(decodedText);
+        if (ok) {
+          setScanStatus("QR scanned. Payload field updated.");
+        } else {
+          setScanStatus("QR scanned but format is not recognized.");
+        }
+        await stopQrCameraScan();
+      },
+      () => {}
+    );
+    setScanStatus("Point camera at pairing QR.");
+  } catch (err) {
+    state.qrScanning = false;
+    els.qrScannerWrap.hidden = true;
+    setScanStatus(`Camera scan failed: ${err.message}`);
+  }
+}
+
+async function scanQrFromPhotoFile(file) {
+  if (!file) return;
+  try {
+    const scanner = ensureQrScannerInstance();
+    setScanStatus("Scanning photo...");
+    const decodedText = await scanner.scanFile(file, false);
+    const ok = applyPairingFromScannedText(decodedText);
+    if (ok) {
+      setScanStatus("QR photo decoded. Payload field updated.");
+    } else {
+      setScanStatus("Decoded QR, but payload format is not recognized.");
+    }
+    try {
+      await scanner.clear();
+    } catch {
+      // Ignore clear errors.
+    }
+    state.qrScanner = null;
+  } catch (err) {
+    setScanStatus(`Photo scan failed: ${err.message}`);
+  } finally {
+    els.qrPhotoInput.value = "";
+  }
 }
 
 function savePairingState() {
@@ -215,7 +388,15 @@ async function enablePush() {
     setPushStatus("Pair first.");
     return;
   }
+  if (isIOSDevice() && !isStandaloneWebApp()) {
+    setPushStatus("On iPhone, add this site to Home Screen, open it from the app icon, then enable push.");
+    return;
+  }
   if (!("Notification" in window) || !("PushManager" in window)) {
+    if (isIOSDevice()) {
+      setPushStatus("Push API unavailable here. Open from Home Screen app icon and try again.");
+      return;
+    }
     setPushStatus("Push is not supported by this browser.");
     return;
   }
@@ -274,6 +455,10 @@ async function enablePush() {
 async function refreshPushStatusAfterPair() {
   if (!state.paired) {
     setPushStatus("");
+    return;
+  }
+  if (isIOSDevice() && !isStandaloneWebApp()) {
+    setPushStatus("Install to Home Screen and open from app icon to enable push on iPhone.");
     return;
   }
   if (!("Notification" in window) || !("PushManager" in window) || !("serviceWorker" in navigator)) {
@@ -437,6 +622,13 @@ async function sendMessage() {
 }
 
 els.btnPair.addEventListener("click", pair);
+els.btnScanQr.addEventListener("click", startQrCameraScan);
+els.btnStopScan.addEventListener("click", stopQrCameraScan);
+els.btnScanPhoto.addEventListener("click", () => els.qrPhotoInput.click());
+els.qrPhotoInput.addEventListener("change", async () => {
+  const file = els.qrPhotoInput.files && els.qrPhotoInput.files[0];
+  await scanQrFromPhotoFile(file);
+});
 els.btnSend.addEventListener("click", sendMessage);
 els.btnEnablePush.addEventListener("click", enablePush);
 els.msgInput.addEventListener("keydown", (e) => {

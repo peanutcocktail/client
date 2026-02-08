@@ -14,6 +14,17 @@ The client can prefill pairing fields from query params:
 - `pair_payload`: raw JSON string (URL-encoded)
 - `relay_url`: optional relay URL override/prefill
 
+## Pairing via QR camera/photo
+
+The UI now supports:
+- `Scan QR (Camera)` for live camera scanning.
+- `Scan QR (Photo)` to decode a QR from an image.
+
+Supported QR content:
+- raw pairing payload JSON
+- deep-link URL containing `pair_b64` / `pair_payload` / `relay_url`
+- bare `pair_b64` value
+
 ## Web push notifications
 
 After pairing:
