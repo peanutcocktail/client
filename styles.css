@@ -59,6 +59,11 @@ body {
   font-size: 0.82rem;
 }
 
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .messages {
   overflow: auto;
   padding: 12px;

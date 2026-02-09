@@ -277,7 +277,15 @@ function isStandaloneWebApp() {
   return window.navigator.standalone === true;
 }
 
+function canScanQrNow() {
+  // iPhone push + camera pairing flow is intended for Home Screen app context.
+  if (isIOSDevice() && !isStandaloneWebApp()) return false;
+  return true;
+}
+
 function updateInstallUi() {
+  els.btnOpenScanner.disabled = !canScanQrNow();
+
   if (isStandaloneWebApp()) {
     els.btnInstall.hidden = true;
     setInstallStatus("Installed.");
@@ -332,6 +340,12 @@ async function requestInstall() {
 
   addMessage("system", "Use browser menu and choose Install App / Add to Home Screen.");
   setInstallStatus("Use browser menu and choose Install App / Add to Home Screen.");
+}
+
+function showInstallFirstMessage() {
+  setPairStatus("Install app first. Then open from Home Screen and scan QR.");
+  setScanStatus("Scanner is available after opening the installed app.");
+  addMessage("system", "Install first, then reopen from Home Screen to pair.");
 }
 
 async function ensureServiceWorkerRegistration() {
@@ -573,6 +587,12 @@ async function stopScanner() {
 }
 
 async function startScanner() {
+  if (!canScanQrNow()) {
+    showScanOverlay(false);
+    showInstallFirstMessage();
+    updateInstallUi();
+    return;
+  }
   if (state.qrScanning) return;
   try {
     const scanner = ensureQrScannerInstance();
@@ -716,6 +736,11 @@ async function bootstrap() {
 
   if (restorePairingState()) {
     connectFromRestoredState();
+    return;
+  }
+
+  if (!canScanQrNow()) {
+    showInstallFirstMessage();
     return;
   }
 

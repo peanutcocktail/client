@@ -22,6 +22,8 @@ It supports QR values containing:
 - deep-link URL containing `pair_b64` / `pair_payload` / `relay_url`
 - bare `pair_b64` value
 
+On iPhone, scanning is intentionally gated to the installed Home Screen app context.
+
 ## Install to Home Screen
 
 The UI includes an `Install` button:
