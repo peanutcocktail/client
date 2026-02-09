@@ -55,6 +55,7 @@ let state = {
   pushEnabled: false,
   qrScanner: null,
   qrScanning: false,
+  connecting: false,
   deferredInstallPrompt: null,
 };
 
@@ -552,6 +553,7 @@ function ensureQrScannerInstance() {
 
 async function stopScanner() {
   if (!state.qrScanner || !state.qrScanning) {
+    state.qrScanning = false;
     showScanOverlay(false);
     return;
   }
@@ -613,7 +615,13 @@ function setConnectedUi(connected) {
 }
 
 async function connectWithPayload(payload, payloadText = "") {
+  if (state.connecting) return;
+  state.connecting = true;
   try {
+    // Ensure scanner overlay is closed even if QR callback races.
+    await stopScanner();
+    showScanOverlay(false);
+
     const normalized = normalizePayload(payload);
     state.relayUrl = normalized.relay_url;
     state.nodeDeviceId = normalized.node_device_id;
@@ -640,6 +648,8 @@ async function connectWithPayload(payload, payloadText = "") {
     addMessage("system", `Connection failed: ${err.message}`);
     els.btnEnablePush.hidden = true;
     await startScanner();
+  } finally {
+    state.connecting = false;
   }
 }
 
