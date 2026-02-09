@@ -1,23 +1,26 @@
 const els = {
-  relayUrl: document.getElementById("relayUrl"),
-  pairingPayload: document.getElementById("pairingPayload"),
-  btnPair: document.getElementById("btnPair"),
-  pairStatus: document.getElementById("pairStatus"),
-  btnScanQr: document.getElementById("btnScanQr"),
-  btnScanPhoto: document.getElementById("btnScanPhoto"),
-  btnStopScan: document.getElementById("btnStopScan"),
-  scanStatus: document.getElementById("scanStatus"),
-  qrScannerWrap: document.getElementById("qrScannerWrap"),
-  qrPhotoInput: document.getElementById("qrPhotoInput"),
-  pairDetails: document.getElementById("pairDetails"),
-  nodeDeviceId: document.getElementById("nodeDeviceId"),
-  inboxDeviceId: document.getElementById("inboxDeviceId"),
+  connState: document.getElementById("connState"),
+  btnOpenScanner: document.getElementById("btnOpenScanner"),
+  btnInstall: document.getElementById("btnInstall"),
   btnEnablePush: document.getElementById("btnEnablePush"),
-  pushStatus: document.getElementById("pushStatus"),
-  curlHint: document.getElementById("curlHint"),
+  btnToggleMeta: document.getElementById("btnToggleMeta"),
+  scanOverlay: document.getElementById("scanOverlay"),
+  qrScanner: document.getElementById("qrScanner"),
+  scanStatus: document.getElementById("scanStatus"),
+  btnStopScan: document.getElementById("btnStopScan"),
   messages: document.getElementById("messages"),
+  composer: document.getElementById("composer"),
   msgInput: document.getElementById("msgInput"),
   btnSend: document.getElementById("btnSend"),
+  metaPanel: document.getElementById("metaPanel"),
+  relayUrl: document.getElementById("relayUrl"),
+  nodeDeviceId: document.getElementById("nodeDeviceId"),
+  inboxDeviceId: document.getElementById("inboxDeviceId"),
+  pairStatus: document.getElementById("pairStatus"),
+  installStatus: document.getElementById("installStatus"),
+  pushStatus: document.getElementById("pushStatus"),
+  curlHint: document.getElementById("curlHint"),
+  pairingPayloadView: document.getElementById("pairingPayloadView"),
 };
 
 const CLIENT_DEVICE_ID_STORAGE_KEY = "bus_client_device_id_v1";
@@ -28,23 +31,23 @@ function getOrCreateClientDeviceId() {
     const existing = localStorage.getItem(CLIENT_DEVICE_ID_STORAGE_KEY);
     if (existing && existing.trim()) return existing.trim();
   } catch {
-    // Ignore localStorage errors and fall back to ephemeral ID.
+    // ignore storage errors
   }
   const fresh = crypto.randomUUID();
   try {
     localStorage.setItem(CLIENT_DEVICE_ID_STORAGE_KEY, fresh);
   } catch {
-    // Ignore localStorage write errors.
+    // ignore storage errors
   }
   return fresh;
 }
 
 let state = {
   paired: false,
-  relayUrl: null,
-  nodeDeviceId: null,
-  pairCode: null,
-  pskB64: null,
+  relayUrl: "",
+  nodeDeviceId: "",
+  pairCode: "",
+  pskB64: "",
   clientDeviceId: getOrCreateClientDeviceId(),
   seq: 0,
   pollTimer: null,
@@ -52,45 +55,47 @@ let state = {
   pushEnabled: false,
   qrScanner: null,
   qrScanning: false,
+  deferredInstallPrompt: null,
 };
 
-function decodeUrlsafeB64ToString(value) {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padLen = (4 - (normalized.length % 4)) % 4;
-  const padded = normalized + "=".repeat(padLen);
-  const binary = atob(padded);
-  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
+function setConnState(text) {
+  els.connState.textContent = text;
 }
 
-function hydrateFromQueryParams() {
-  const params = new URLSearchParams(window.location.search);
-  const payloadB64 = params.get("pair_b64");
-  const payloadRaw = params.get("pair_payload");
-  const relayFromQuery = params.get("relay_url");
-
-  try {
-    applyPairingFromQueryString(params.toString(), true);
-    return;
-  } catch {
-    if (relayFromQuery && !els.relayUrl.value.trim()) {
-      els.relayUrl.value = relayFromQuery;
-    }
-    if (payloadB64) {
-      els.pairStatus.textContent = "Failed to decode pair_b64 URL param.";
-      return;
-    }
-    if (payloadRaw) {
-      els.pairingPayload.value = payloadRaw;
-    }
-  }
+function setPairStatus(text) {
+  els.pairStatus.textContent = text;
 }
 
-function addMessage(text) {
+function setScanStatus(text) {
+  els.scanStatus.textContent = text;
+}
+
+function setPushStatus(text) {
+  els.pushStatus.textContent = text;
+}
+
+function setInstallStatus(text) {
+  els.installStatus.textContent = text;
+}
+
+function setComposerEnabled(enabled) {
+  els.composer.setAttribute("aria-disabled", enabled ? "false" : "true");
+  els.msgInput.disabled = !enabled;
+  els.btnSend.disabled = !enabled;
+}
+
+function showScanOverlay(show) {
+  els.scanOverlay.hidden = !show;
+}
+
+function addMessage(kind, text) {
   const div = document.createElement("div");
-  div.className = "msg";
+  div.className = `msg msg-${kind}`;
   div.textContent = text;
   els.messages.appendChild(div);
+  while (els.messages.children.length > 300) {
+    els.messages.removeChild(els.messages.firstChild);
+  }
   els.messages.scrollTop = els.messages.scrollHeight;
 }
 
@@ -111,34 +116,17 @@ function decodeTextB64(value) {
   }
 }
 
-function relayPath(path, params = {}) {
-  const url = new URL(path, state.relayUrl);
-  for (const [key, value] of Object.entries(params)) {
-    url.searchParams.set(key, String(value));
-  }
-  return url.toString();
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isIOSDevice() {
-  const ua = navigator.userAgent || "";
-  return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-}
-
-function isStandaloneWebApp() {
-  try {
-    if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) return true;
-  } catch {
-    // Ignore.
-  }
-  return window.navigator.standalone === true;
+function decodeUrlsafeB64ToString(value) {
+  const normalized = String(value).replace(/-/g, "+").replace(/_/g, "/");
+  const padLen = (4 - (normalized.length % 4)) % 4;
+  const padded = normalized + "=".repeat(padLen);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 }
 
 function urlBase64ToUint8Array(base64String) {
-  const normalized = base64String.replace(/-/g, "+").replace(/_/g, "/");
+  const normalized = String(base64String).replace(/-/g, "+").replace(/_/g, "/");
   const padLen = (4 - (normalized.length % 4)) % 4;
   const padded = normalized + "=".repeat(padLen);
   const rawData = atob(padded);
@@ -149,165 +137,83 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
-function setPushStatus(text) {
-  els.pushStatus.textContent = text;
-}
-
-function setScanStatus(text) {
-  els.scanStatus.textContent = text;
-}
-
-function applyPairingPayloadObject(payload, preserveRelayIfSet = true) {
-  if (!payload || typeof payload !== "object") return false;
-  if (!payload.v || !payload.node_device_id || !payload.pair_code || !payload.psk_b64) return false;
-  els.pairingPayload.value = JSON.stringify(payload);
-  if (payload.relay_url && (!preserveRelayIfSet || !els.relayUrl.value.trim())) {
-    els.relayUrl.value = String(payload.relay_url);
+function relayPath(path, params = {}) {
+  const url = new URL(path, state.relayUrl);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, String(value));
   }
-  return true;
+  return url.toString();
 }
 
-function applyPairingFromQueryString(queryString, preserveRelayIfSet = true) {
+function normalizePayload(payload) {
+  if (!payload || typeof payload !== "object") throw new Error("Missing pairing payload");
+  if (Number(payload.v) !== 1) throw new Error("Unsupported pairing payload version");
+
+  const normalized = {
+    v: 1,
+    relay_url: String(payload.relay_url || "").trim(),
+    node_device_id: String(payload.node_device_id || "").trim(),
+    pair_code: String(payload.pair_code || "").trim(),
+    psk_b64: String(payload.psk_b64 || "").trim(),
+    expires_at: Number(payload.expires_at || 0),
+  };
+
+  if (!normalized.relay_url || !normalized.node_device_id || !normalized.pair_code || !normalized.psk_b64) {
+    throw new Error("Incomplete pairing payload");
+  }
+  return normalized;
+}
+
+function payloadFromQueryString(queryString) {
   const params = new URLSearchParams(queryString);
-  const payloadB64 = params.get("pair_b64");
-  const payloadRaw = params.get("pair_payload");
-  const relayFromQuery = params.get("relay_url");
+  const pairB64 = params.get("pair_b64");
+  const pairPayload = params.get("pair_payload");
+  const relayOverride = params.get("relay_url");
 
-  if (relayFromQuery && (!preserveRelayIfSet || !els.relayUrl.value.trim())) {
-    els.relayUrl.value = relayFromQuery;
+  if (pairB64) {
+    const decoded = decodeUrlsafeB64ToString(pairB64);
+    const payload = JSON.parse(decoded);
+    if (!payload.relay_url && relayOverride) payload.relay_url = relayOverride;
+    return normalizePayload(payload);
   }
-  if (payloadB64) {
-    const decoded = decodeUrlsafeB64ToString(payloadB64);
-    const parsed = JSON.parse(decoded);
-    return applyPairingPayloadObject(parsed, preserveRelayIfSet);
+  if (pairPayload) {
+    const payload = JSON.parse(pairPayload);
+    if (!payload.relay_url && relayOverride) payload.relay_url = relayOverride;
+    return normalizePayload(payload);
   }
-  if (payloadRaw) {
-    const parsed = JSON.parse(payloadRaw);
-    return applyPairingPayloadObject(parsed, preserveRelayIfSet);
-  }
-  return false;
+  return null;
 }
 
-function applyPairingFromScannedText(rawText) {
+function payloadFromScannedText(rawText) {
   const value = String(rawText || "").trim();
-  if (!value) return false;
+  if (!value) return null;
 
   try {
-    const parsed = JSON.parse(value);
-    if (applyPairingPayloadObject(parsed, false)) return true;
+    return normalizePayload(JSON.parse(value));
   } catch {
-    // Not raw payload JSON.
+    // not raw JSON
   }
 
   try {
-    const asUrl = new URL(value);
-    if (applyPairingFromQueryString(asUrl.search, false)) return true;
+    const parsedUrl = new URL(value);
+    const fromQuery = payloadFromQueryString(parsedUrl.search);
+    if (fromQuery) return fromQuery;
   } catch {
-    // Not URL.
+    // not URL
   }
 
   try {
     const decoded = decodeUrlsafeB64ToString(value);
-    const parsed = JSON.parse(decoded);
-    if (applyPairingPayloadObject(parsed, false)) return true;
+    return normalizePayload(JSON.parse(decoded));
   } catch {
-    // Not pair_b64.
+    // not pair_b64
   }
 
-  return false;
-}
-
-function ensureQrScannerInstance() {
-  if (!window.Html5Qrcode) {
-    throw new Error("QR scanner library failed to load.");
-  }
-  if (!state.qrScanner) {
-    state.qrScanner = new Html5Qrcode("qrScanner");
-  }
-  return state.qrScanner;
-}
-
-async function stopQrCameraScan() {
-  if (!state.qrScanner || !state.qrScanning) {
-    els.qrScannerWrap.hidden = true;
-    return;
-  }
-  try {
-    await state.qrScanner.stop();
-  } catch {
-    // Ignore stop errors.
-  }
-  try {
-    await state.qrScanner.clear();
-  } catch {
-    // Ignore clear errors.
-  }
-  state.qrScanner = null;
-  state.qrScanning = false;
-  els.qrScannerWrap.hidden = true;
-}
-
-async function startQrCameraScan() {
-  if (state.qrScanning) return;
-  try {
-    const scanner = ensureQrScannerInstance();
-    els.qrScannerWrap.hidden = false;
-    setScanStatus("Opening camera...");
-    state.qrScanning = true;
-
-    await scanner.start(
-      { facingMode: "environment" },
-      {
-        fps: 10,
-        qrbox: { width: 240, height: 240 },
-        aspectRatio: 1.0,
-      },
-      async (decodedText) => {
-        const ok = applyPairingFromScannedText(decodedText);
-        if (ok) {
-          setScanStatus("QR scanned. Payload field updated.");
-        } else {
-          setScanStatus("QR scanned but format is not recognized.");
-        }
-        await stopQrCameraScan();
-      },
-      () => {}
-    );
-    setScanStatus("Point camera at pairing QR.");
-  } catch (err) {
-    state.qrScanning = false;
-    els.qrScannerWrap.hidden = true;
-    setScanStatus(`Camera scan failed: ${err.message}`);
-  }
-}
-
-async function scanQrFromPhotoFile(file) {
-  if (!file) return;
-  try {
-    const scanner = ensureQrScannerInstance();
-    setScanStatus("Scanning photo...");
-    const decodedText = await scanner.scanFile(file, false);
-    const ok = applyPairingFromScannedText(decodedText);
-    if (ok) {
-      setScanStatus("QR photo decoded. Payload field updated.");
-    } else {
-      setScanStatus("Decoded QR, but payload format is not recognized.");
-    }
-    try {
-      await scanner.clear();
-    } catch {
-      // Ignore clear errors.
-    }
-    state.qrScanner = null;
-  } catch (err) {
-    setScanStatus(`Photo scan failed: ${err.message}`);
-  } finally {
-    els.qrPhotoInput.value = "";
-  }
+  return null;
 }
 
 function savePairingState() {
-  const payload = {
+  const stored = {
     relayUrl: state.relayUrl,
     nodeDeviceId: state.nodeDeviceId,
     pairCode: state.pairCode,
@@ -315,9 +221,9 @@ function savePairingState() {
     clientDeviceId: state.clientDeviceId,
   };
   try {
-    localStorage.setItem(PAIRING_STATE_STORAGE_KEY, JSON.stringify(payload));
+    localStorage.setItem(PAIRING_STATE_STORAGE_KEY, JSON.stringify(stored));
   } catch {
-    // Ignore storage failures.
+    // ignore storage errors
   }
 }
 
@@ -330,30 +236,113 @@ function restorePairingState() {
   }
   if (!raw) return false;
 
-  let saved = null;
   try {
-    saved = JSON.parse(raw);
+    const saved = JSON.parse(raw);
+    if (!saved || !saved.relayUrl || !saved.nodeDeviceId || !saved.clientDeviceId) return false;
+    state.relayUrl = String(saved.relayUrl);
+    state.nodeDeviceId = String(saved.nodeDeviceId);
+    state.pairCode = String(saved.pairCode || "");
+    state.pskB64 = String(saved.pskB64 || "");
+    state.clientDeviceId = String(saved.clientDeviceId);
+    return true;
   } catch {
     return false;
   }
-  if (!saved || !saved.relayUrl || !saved.nodeDeviceId || !saved.clientDeviceId) {
-    return false;
+}
+
+function renderMeta(payloadText = "") {
+  els.relayUrl.textContent = state.relayUrl || "-";
+  els.nodeDeviceId.textContent = state.nodeDeviceId || "-";
+  els.inboxDeviceId.textContent = state.clientDeviceId || "-";
+  els.curlHint.textContent = state.paired
+    ? `curl -X POST ${relayPath("/v1/envelopes")} \\\n  -H "Content-Type: application/json" \\\n  -d '{"v":1,"msg_id":"test-ui-1","conv_id":"demo","from_device_id":"manual","to_device_id":"${state.clientDeviceId}","dir":"to_local","seq":1,"created_ms":${Date.now()},"nonce_b64":"AA==","ciphertext_b64":"SGVsbG8gZnJvbSBjdXJs"}'`
+    : "Pair first.";
+  if (payloadText) {
+    els.pairingPayloadView.textContent = payloadText;
+  }
+}
+
+function isIOSDevice() {
+  const ua = navigator.userAgent || "";
+  return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function isStandaloneWebApp() {
+  try {
+    if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) return true;
+  } catch {
+    // ignore
+  }
+  return window.navigator.standalone === true;
+}
+
+function updateInstallUi() {
+  if (isStandaloneWebApp()) {
+    els.btnInstall.hidden = true;
+    setInstallStatus("Installed.");
+    return;
   }
 
-  state.relayUrl = String(saved.relayUrl);
-  state.nodeDeviceId = String(saved.nodeDeviceId);
-  state.pairCode = saved.pairCode ? String(saved.pairCode) : null;
-  state.pskB64 = saved.pskB64 ? String(saved.pskB64) : null;
-  state.clientDeviceId = String(saved.clientDeviceId);
-  state.paired = true;
+  if (state.deferredInstallPrompt) {
+    els.btnInstall.hidden = false;
+    setInstallStatus("Install app for quick access.");
+    return;
+  }
 
-  els.relayUrl.value = state.relayUrl;
-  setPairDetails();
-  els.pairStatus.textContent = "Restored previous pairing session.";
-  addMessage(`[system] restored pairing; web inbox=${state.clientDeviceId}; local node=${state.nodeDeviceId}`);
-  refreshPushStatusAfterPair();
-  startPolling();
-  return true;
+  if (isIOSDevice()) {
+    els.btnInstall.hidden = false;
+    setInstallStatus("iPhone: Share -> Add to Home Screen.");
+    return;
+  }
+
+  els.btnInstall.hidden = false;
+  setInstallStatus("Use browser menu to install to Home Screen.");
+}
+
+async function requestInstall() {
+  if (isStandaloneWebApp()) {
+    updateInstallUi();
+    return;
+  }
+
+  if (state.deferredInstallPrompt) {
+    const deferred = state.deferredInstallPrompt;
+    state.deferredInstallPrompt = null;
+    try {
+      await deferred.prompt();
+      if (deferred.userChoice) {
+        const result = await deferred.userChoice;
+        if (result && result.outcome === "accepted") {
+          addMessage("system", "App installed.");
+        }
+      }
+    } catch {
+      // Ignore prompt errors.
+    }
+    updateInstallUi();
+    return;
+  }
+
+  if (isIOSDevice()) {
+    addMessage("system", "Install on iPhone: Share -> Add to Home Screen.");
+    setInstallStatus("Install on iPhone: Share -> Add to Home Screen.");
+    return;
+  }
+
+  addMessage("system", "Use browser menu and choose Install App / Add to Home Screen.");
+  setInstallStatus("Use browser menu and choose Install App / Add to Home Screen.");
+}
+
+async function ensureServiceWorkerRegistration() {
+  if (!("serviceWorker" in navigator)) {
+    throw new Error("Service workers are not supported in this browser.");
+  }
+  if (!window.isSecureContext && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+    throw new Error("Push requires HTTPS.");
+  }
+  const reg = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.ready;
+  return reg;
 }
 
 async function fetchPushConfig() {
@@ -371,47 +360,42 @@ async function fetchPushConfig() {
   return data || {};
 }
 
-async function ensureServiceWorkerRegistration() {
-  if (!("serviceWorker" in navigator)) {
-    throw new Error("Service workers are not supported in this browser.");
-  }
-  if (!window.isSecureContext && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
-    throw new Error("Push requires HTTPS.");
-  }
-  const reg = await navigator.serviceWorker.register("/sw.js");
-  await navigator.serviceWorker.ready;
-  return reg;
-}
+async function enablePush(options = { interactive: true }) {
+  if (!state.paired) return false;
 
-async function enablePush() {
-  if (!state.paired) {
-    setPushStatus("Pair first.");
-    return;
-  }
   if (isIOSDevice() && !isStandaloneWebApp()) {
-    setPushStatus("On iPhone, add this site to Home Screen, open it from the app icon, then enable push.");
-    return;
+    setPushStatus("On iPhone, open from Home Screen app icon for push.");
+    els.btnEnablePush.hidden = false;
+    return false;
   }
   if (!("Notification" in window) || !("PushManager" in window)) {
-    if (isIOSDevice()) {
-      setPushStatus("Push API unavailable here. Open from Home Screen app icon and try again.");
-      return;
-    }
-    setPushStatus("Push is not supported by this browser.");
-    return;
+    setPushStatus("Push unavailable on this browser.");
+    els.btnEnablePush.hidden = false;
+    return false;
   }
 
-  els.btnEnablePush.disabled = true;
-  setPushStatus("Enabling push...");
   try {
     const cfg = await fetchPushConfig();
     if (!cfg.enabled || !cfg.vapid_public_key) {
-      throw new Error("Relay push is not configured.");
+      setPushStatus("Relay push is not configured.");
+      els.btnEnablePush.hidden = true;
+      return false;
     }
 
-    const permission = await Notification.requestPermission();
+    let permission = Notification.permission;
     if (permission !== "granted") {
-      throw new Error(`Notification permission is ${permission}.`);
+      if (!options.interactive) {
+        setPushStatus("Tap Push to enable notifications.");
+        els.btnEnablePush.hidden = false;
+        return false;
+      }
+      permission = await Notification.requestPermission();
+    }
+
+    if (permission !== "granted") {
+      setPushStatus(`Notifications are ${permission}.`);
+      els.btnEnablePush.hidden = false;
+      return false;
     }
 
     const reg = await ensureServiceWorkerRegistration();
@@ -431,58 +415,28 @@ async function enablePush() {
         subscription: subscription.toJSON(),
       }),
     });
+
     let subData = null;
     try {
       subData = await subRes.json();
     } catch {
       subData = null;
     }
+
     if (!subRes.ok) {
       const detail = (subData && subData.detail) ? subData.detail : `push subscribe failed (${subRes.status})`;
       throw new Error(detail);
     }
 
     state.pushEnabled = true;
-    setPushStatus("Push enabled for this browser.");
-    addMessage("[system] push enabled");
+    els.btnEnablePush.hidden = true;
+    setPushStatus("Push enabled.");
+    addMessage("system", "Push enabled on this device.");
+    return true;
   } catch (err) {
     setPushStatus(`Push setup failed: ${err.message}`);
-  } finally {
-    els.btnEnablePush.disabled = false;
-  }
-}
-
-async function refreshPushStatusAfterPair() {
-  if (!state.paired) {
-    setPushStatus("");
-    return;
-  }
-  if (isIOSDevice() && !isStandaloneWebApp()) {
-    setPushStatus("Install to Home Screen and open from app icon to enable push on iPhone.");
-    return;
-  }
-  if (!("Notification" in window) || !("PushManager" in window) || !("serviceWorker" in navigator)) {
-    setPushStatus("Push not supported in this browser.");
-    return;
-  }
-  if (Notification.permission === "denied") {
-    setPushStatus("Notifications are blocked in this browser.");
-    return;
-  }
-  try {
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (!reg) {
-      setPushStatus("Push not enabled yet.");
-      return;
-    }
-    const sub = await reg.pushManager.getSubscription();
-    if (sub) {
-      setPushStatus("Browser has a push subscription. Click Enable Push to sync with relay.");
-      return;
-    }
-    setPushStatus("Push not enabled yet.");
-  } catch {
-    setPushStatus("Push not enabled yet.");
+    els.btnEnablePush.hidden = false;
+    return false;
   }
 }
 
@@ -500,6 +454,7 @@ async function claimPairingOnRelay() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(claimBody),
     });
+
     let data = null;
     try {
       data = await res.json();
@@ -507,24 +462,15 @@ async function claimPairingOnRelay() {
       data = null;
     }
 
-    if (res.ok) return data;
+    if (res.ok) return true;
 
     const detail = (data && data.detail) ? data.detail : `pairing claim failed (${res.status})`;
     lastErr = detail;
     if (res.status !== 404 || attempt === 6) break;
-    await sleep(500);
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
   throw new Error(lastErr);
-}
-
-function setPairDetails() {
-  els.pairDetails.hidden = false;
-  els.nodeDeviceId.textContent = state.nodeDeviceId;
-  els.inboxDeviceId.textContent = state.clientDeviceId;
-  els.curlHint.textContent = `curl -X POST ${relayPath("/v1/envelopes")} \\
-  -H "Content-Type: application/json" \\
-  -d '{"v":1,"msg_id":"test-ui-1","conv_id":"demo","from_device_id":"manual","to_device_id":"${state.clientDeviceId}","dir":"to_local","seq":1,"created_ms":${Date.now()},"nonce_b64":"AA==","ciphertext_b64":"SGVsbG8gZnJvbSBjdXJs"}'`;
 }
 
 function startPolling() {
@@ -544,11 +490,11 @@ function startPolling() {
       for (const env of envelopes) {
         const text = decodeTextB64(env.ciphertext_b64);
         const from = env.from_device_id || "unknown";
-        const tag = from === state.clientDeviceId ? "echo" : "remote";
-        addMessage(`[${tag}] ${text}`);
+        const kind = from === state.clientDeviceId ? "you" : "remote";
+        addMessage(kind, text);
       }
     } catch (err) {
-      els.pairStatus.textContent = `Paired, but polling failed: ${err.message}`;
+      setPairStatus(`Polling error: ${err.message}`);
     } finally {
       state.pollInFlight = false;
     }
@@ -558,40 +504,13 @@ function startPolling() {
   poll();
 }
 
-async function pair() {
-  try {
-    const payload = JSON.parse(els.pairingPayload.value.trim());
-    if (payload.v !== 1) throw new Error("Unsupported pairing payload version");
-    state.relayUrl = (els.relayUrl.value || payload.relay_url || "").trim();
-    state.nodeDeviceId = payload.node_device_id;
-    state.pairCode = payload.pair_code;
-    state.pskB64 = payload.psk_b64;
-
-    if (!state.relayUrl) throw new Error("Missing relayUrl");
-    if (!state.nodeDeviceId || !state.pairCode || !state.pskB64) throw new Error("Incomplete pairing payload");
-
-    await claimPairingOnRelay();
-    state.paired = true;
-    els.pairStatus.textContent = "Paired and claimed. UI is now polling the relay inbox.";
-    setPairDetails();
-    savePairingState();
-    refreshPushStatusAfterPair();
-    addMessage(`[system] paired; web inbox=${state.clientDeviceId}; local node=${state.nodeDeviceId}`);
-    startPolling();
-  } catch (err) {
-    els.pairStatus.textContent = "Pairing failed: " + err.message;
-    els.pairDetails.hidden = true;
-  }
-}
-
-async function sendMessage() {
+async function sendMessage(text) {
   if (!state.paired) {
-    addMessage("[system] not paired yet");
+    addMessage("system", "Not connected yet.");
     return;
   }
-  const text = els.msgInput.value.trim();
-  if (!text) return;
-  els.msgInput.value = "";
+  const bodyText = String(text || "").trim();
+  if (!bodyText) return;
 
   const nextSeq = state.seq + 1;
   const env = {
@@ -604,7 +523,7 @@ async function sendMessage() {
     seq: nextSeq,
     created_ms: Date.now(),
     nonce_b64: "AA==",
-    ciphertext_b64: encodeTextB64(text),
+    ciphertext_b64: encodeTextB64(bodyText),
   };
 
   try {
@@ -615,27 +534,182 @@ async function sendMessage() {
     });
     if (!res.ok) throw new Error(`send failed (${res.status})`);
     state.seq = nextSeq;
-    addMessage("[you] " + text);
+    addMessage("you", bodyText);
   } catch (err) {
-    addMessage("[system] send failed: " + err.message);
+    addMessage("system", `Send failed: ${err.message}`);
   }
 }
 
-els.btnPair.addEventListener("click", pair);
-els.btnScanQr.addEventListener("click", startQrCameraScan);
-els.btnStopScan.addEventListener("click", stopQrCameraScan);
-els.btnScanPhoto.addEventListener("click", () => els.qrPhotoInput.click());
-els.qrPhotoInput.addEventListener("change", async () => {
-  const file = els.qrPhotoInput.files && els.qrPhotoInput.files[0];
-  await scanQrFromPhotoFile(file);
-});
-els.btnSend.addEventListener("click", sendMessage);
-els.btnEnablePush.addEventListener("click", enablePush);
-els.msgInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendMessage();
-});
-
-hydrateFromQueryParams();
-if (!els.pairingPayload.value.trim()) {
-  restorePairingState();
+function ensureQrScannerInstance() {
+  if (!window.Html5Qrcode) {
+    throw new Error("QR scanner library failed to load.");
+  }
+  if (!state.qrScanner) {
+    state.qrScanner = new Html5Qrcode("qrScanner");
+  }
+  return state.qrScanner;
 }
+
+async function stopScanner() {
+  if (!state.qrScanner || !state.qrScanning) {
+    showScanOverlay(false);
+    return;
+  }
+  try {
+    await state.qrScanner.stop();
+  } catch {
+    // ignore
+  }
+  try {
+    await state.qrScanner.clear();
+  } catch {
+    // ignore
+  }
+  state.qrScanner = null;
+  state.qrScanning = false;
+  showScanOverlay(false);
+}
+
+async function startScanner() {
+  if (state.qrScanning) return;
+  try {
+    const scanner = ensureQrScannerInstance();
+    showScanOverlay(true);
+    setScanStatus("Opening camera...");
+    state.qrScanning = true;
+
+    await scanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
+      async (decodedText) => {
+        const payload = payloadFromScannedText(decodedText);
+        if (!payload) {
+          setScanStatus("QR format not recognized.");
+          return;
+        }
+        setScanStatus("QR detected. Connecting...");
+        await stopScanner();
+        await connectWithPayload(payload, JSON.stringify(payload));
+      },
+      () => {}
+    );
+
+    setScanStatus("Point camera at pairing QR.");
+  } catch (err) {
+    state.qrScanning = false;
+    showScanOverlay(true);
+    setScanStatus(`Camera error: ${err.message}`);
+  }
+}
+
+function setConnectedUi(connected) {
+  state.paired = connected;
+  setComposerEnabled(connected);
+  if (connected) {
+    setConnState("Connected");
+  } else {
+    setConnState("Not connected");
+  }
+}
+
+async function connectWithPayload(payload, payloadText = "") {
+  try {
+    const normalized = normalizePayload(payload);
+    state.relayUrl = normalized.relay_url;
+    state.nodeDeviceId = normalized.node_device_id;
+    state.pairCode = normalized.pair_code;
+    state.pskB64 = normalized.psk_b64;
+
+    renderMeta(payloadText || JSON.stringify(normalized));
+    setPairStatus("Claiming pairing...");
+    await claimPairingOnRelay();
+
+    setConnectedUi(true);
+    savePairingState();
+    setPairStatus("Connected.");
+    addMessage("system", `Connected to ${state.nodeDeviceId}`);
+    startPolling();
+
+    const pushed = await enablePush({ interactive: false });
+    if (!pushed) {
+      els.btnEnablePush.hidden = false;
+    }
+  } catch (err) {
+    setConnectedUi(false);
+    setPairStatus(`Connection failed: ${err.message}`);
+    addMessage("system", `Connection failed: ${err.message}`);
+    els.btnEnablePush.hidden = true;
+    await startScanner();
+  }
+}
+
+function connectFromRestoredState() {
+  setConnectedUi(true);
+  renderMeta();
+  setPairStatus("Restored previous session.");
+  addMessage("system", `Restored session for ${state.nodeDeviceId}`);
+  startPolling();
+  enablePush({ interactive: false }).then((ok) => {
+    if (!ok) els.btnEnablePush.hidden = false;
+  });
+}
+
+function wireEvents() {
+  els.btnOpenScanner.addEventListener("click", startScanner);
+  els.btnStopScan.addEventListener("click", stopScanner);
+  els.btnInstall.addEventListener("click", requestInstall);
+  els.btnToggleMeta.addEventListener("click", () => {
+    els.metaPanel.hidden = !els.metaPanel.hidden;
+  });
+  els.btnEnablePush.addEventListener("click", () => enablePush({ interactive: true }));
+  els.composer.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const text = els.msgInput.value;
+    els.msgInput.value = "";
+    await sendMessage(text);
+  });
+}
+
+async function bootstrap() {
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    state.deferredInstallPrompt = event;
+    updateInstallUi();
+  });
+
+  window.addEventListener("appinstalled", () => {
+    state.deferredInstallPrompt = null;
+    updateInstallUi();
+    addMessage("system", "App installed.");
+  });
+
+  setConnectedUi(false);
+  setScanStatus("");
+  setPairStatus("Scan local pairing QR to connect.");
+  setInstallStatus("");
+  setPushStatus("");
+  renderMeta();
+  wireEvents();
+  updateInstallUi();
+
+  let fromQuery = null;
+  try {
+    fromQuery = payloadFromQueryString(window.location.search);
+  } catch {
+    fromQuery = null;
+  }
+
+  if (fromQuery) {
+    await connectWithPayload(fromQuery, JSON.stringify(fromQuery));
+    return;
+  }
+
+  if (restorePairingState()) {
+    connectFromRestoredState();
+    return;
+  }
+
+  await startScanner();
+}
+
+bootstrap();

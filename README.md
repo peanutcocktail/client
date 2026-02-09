@@ -14,24 +14,26 @@ The client can prefill pairing fields from query params:
 - `pair_payload`: raw JSON string (URL-encoded)
 - `relay_url`: optional relay URL override/prefill
 
-## Pairing via QR camera/photo
+## Pairing via QR camera
 
-The UI now supports:
-- `Scan QR (Camera)` for live camera scanning.
-- `Scan QR (Photo)` to decode a QR from an image.
-
-Supported QR content:
+The UI opens camera scan mode automatically when not connected.
+It supports QR values containing:
 - raw pairing payload JSON
 - deep-link URL containing `pair_b64` / `pair_payload` / `relay_url`
 - bare `pair_b64` value
 
+## Install to Home Screen
+
+The UI includes an `Install` button:
+- Chrome/Edge/Android: uses the native install prompt when available.
+- iPhone Safari: shows guidance to use `Share -> Add to Home Screen`.
+
 ## Web push notifications
 
 After pairing:
-1. Click `Enable Push` in the UI.
-2. Allow browser notification permission.
-3. The client subscribes and registers the subscription with the relay.
-4. The client remembers pairing state in `localStorage` and restores it on next load.
+1. The app attempts push setup automatically.
+2. If browser permission needs interaction, tap the `Push` button.
+3. The client remembers pairing state in `localStorage` and restores it on next load.
 
 Requirements:
 - Client must run in a secure context (`https://...`).

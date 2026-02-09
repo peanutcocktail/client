@@ -30,49 +30,48 @@
 </head>
 <body>
   <main class="app">
+    <header class="topbar">
+      <div>
+        <div class="title">Local <-> Global Bus</div>
+        <div id="connState" class="conn">Not connected</div>
+      </div>
+      <div class="actions">
+        <button id="btnOpenScanner" class="icon-btn" type="button" title="Scan QR">QR</button>
+        <button id="btnInstall" class="icon-btn" type="button" title="Install app" hidden>Install</button>
+        <button id="btnEnablePush" class="icon-btn" type="button" title="Enable push" hidden>Push</button>
+        <button id="btnToggleMeta" class="icon-btn" type="button" title="Menu">Menu</button>
+      </div>
+    </header>
 
-    <section class="panel">
-      <label>
-        Base URL
-        <input id="relayUrl" placeholder="https://api.example.com" />
-      </label>
-      <label>
-	Payload
-        <textarea id="pairingPayload" rows="6" placeholder='{"v":1, ...}'></textarea>
-      </label>
-      <button id="btnPair">OK</button>
+    <section id="messages" class="messages"></section>
+
+    <form id="composer" class="composer">
+      <input id="msgInput" autocomplete="off" placeholder="Type a message..." />
+      <button id="btnSend" type="submit">Send</button>
+    </form>
+
+    <section id="metaPanel" class="meta-panel" hidden>
+      <div class="meta-line"><span>Node</span><code id="nodeDeviceId"></code></div>
+      <div class="meta-line"><span>Inbox</span><code id="inboxDeviceId"></code></div>
+      <div class="meta-line"><span>Relay</span><code id="relayUrl"></code></div>
       <div id="pairStatus" class="status"></div>
-      <div class="scan-actions">
-        <button id="btnScanQr" type="button">Scan QR (Camera)</button>
-        <button id="btnScanPhoto" type="button">Scan QR (Photo)</button>
-      </div>
-      <input id="qrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
-      <div id="scanStatus" class="status"></div>
-      <div id="qrScannerWrap" class="scanner-wrap" hidden>
-        <div id="qrScanner"></div>
-        <button id="btnStopScan" type="button">Stop Scan</button>
-      </div>
-      <div id="pairDetails" class="pair-details" hidden>
-        <div>
-          Local node device ID:
-          <code id="nodeDeviceId"></code>
-        </div>
-        <div>
-          Web inbox device ID:
-          <code id="inboxDeviceId"></code>
-        </div>
-        <div class="push-actions">
-          <button id="btnEnablePush" type="button">Enable Push</button>
-          <span id="pushStatus" class="status"></span>
-        </div>
-        <pre id="curlHint" class="curl-hint"></pre>
-      </div>
+      <div id="installStatus" class="status"></div>
+      <div id="pushStatus" class="status"></div>
+      <details>
+        <summary>Debug curl</summary>
+        <pre id="curlHint" class="debug-block"></pre>
+      </details>
+      <details>
+        <summary>Pairing payload</summary>
+        <pre id="pairingPayloadView" class="debug-block"></pre>
+      </details>
     </section>
-    <section class="panel">
-      <div id="messages" class="messages"></div>
-      <div class="composer">
-        <input id="msgInput" placeholder="" />
-        <button id="btnSend">OK</button>
+
+    <section id="scanOverlay" class="scan-overlay" hidden>
+      <div class="scan-panel">
+        <div id="qrScanner" class="qr-scanner"></div>
+        <div id="scanStatus" class="status"></div>
+        <button id="btnStopScan" type="button" class="ghost-btn">Close Scanner</button>
       </div>
     </section>
   </main>
