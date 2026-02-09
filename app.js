@@ -58,6 +58,8 @@ let state = {
   scannerDismissed: false,
   connecting: false,
   deferredInstallPrompt: null,
+  audioCtx: null,
+  lastSoundAtMs: 0,
 };
 
 function setConnState(text) {
@@ -99,6 +101,109 @@ function addMessage(kind, text) {
     els.messages.removeChild(els.messages.firstChild);
   }
   els.messages.scrollTop = els.messages.scrollHeight;
+}
+
+async function getAudioContext() {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return null;
+
+  if (!state.audioCtx) {
+    state.audioCtx = new AudioCtx();
+  }
+
+  if (state.audioCtx.state === "suspended") {
+    try {
+      await state.audioCtx.resume();
+    } catch {
+      return null;
+    }
+  }
+
+  return state.audioCtx;
+}
+
+function scheduleBlip(ctx, config) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const start = config.startAt;
+  const end = start + config.duration;
+
+  osc.type = config.type || "sine";
+  osc.frequency.setValueAtTime(config.freq, start);
+  if (config.freqEnd) {
+    osc.frequency.exponentialRampToValueAtTime(config.freqEnd, end);
+  }
+
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(config.peakGain, start + 0.018);
+  gain.gain.exponentialRampToValueAtTime(0.0001, end);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(start);
+  osc.stop(end + 0.01);
+}
+
+async function playMessageSound(kind) {
+  const nowMs = Date.now();
+  if (nowMs - state.lastSoundAtMs < 60) return;
+  state.lastSoundAtMs = nowMs;
+
+  const ctx = await getAudioContext();
+  if (!ctx) return;
+
+  const now = ctx.currentTime + 0.005;
+
+  if (kind === "outgoing") {
+    // Short ascending blip similar to a sent-message confirmation.
+    scheduleBlip(ctx, {
+      startAt: now,
+      duration: 0.045,
+      freq: 980,
+      freqEnd: 1250,
+      peakGain: 0.045,
+      type: "triangle",
+    });
+    scheduleBlip(ctx, {
+      startAt: now + 0.05,
+      duration: 0.06,
+      freq: 1400,
+      freqEnd: 1680,
+      peakGain: 0.03,
+      type: "triangle",
+    });
+    return;
+  }
+
+  if (kind === "incoming") {
+    // Soft two-note incoming ping.
+    scheduleBlip(ctx, {
+      startAt: now,
+      duration: 0.085,
+      freq: 920,
+      freqEnd: 870,
+      peakGain: 0.042,
+      type: "sine",
+    });
+    scheduleBlip(ctx, {
+      startAt: now + 0.11,
+      duration: 0.1,
+      freq: 740,
+      freqEnd: 700,
+      peakGain: 0.034,
+      type: "sine",
+    });
+  }
+}
+
+function primeAudioOnGesture() {
+  const unlock = () => {
+    // Browser requires user gesture to unlock audio in many environments.
+    void getAudioContext();
+  };
+  window.addEventListener("pointerdown", unlock, { passive: true });
+  window.addEventListener("touchstart", unlock, { passive: true });
+  window.addEventListener("keydown", unlock);
 }
 
 function encodeTextB64(text) {
@@ -508,6 +613,9 @@ function startPolling() {
         const from = env.from_device_id || "unknown";
         const kind = from === state.clientDeviceId ? "you" : "remote";
         addMessage(kind, text);
+        if (kind === "remote") {
+          void playMessageSound("incoming");
+        }
       }
     } catch (err) {
       setPairStatus(`Polling error: ${err.message}`);
@@ -551,6 +659,7 @@ async function sendMessage(text) {
     if (!res.ok) throw new Error(`send failed (${res.status})`);
     state.seq = nextSeq;
     addMessage("you", bodyText);
+    void playMessageSound("outgoing");
   } catch (err) {
     addMessage("system", `Send failed: ${err.message}`);
   }
@@ -710,6 +819,7 @@ function wireEvents() {
 }
 
 async function bootstrap() {
+  primeAudioOnGesture();
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
     state.deferredInstallPrompt = event;
