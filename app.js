@@ -55,6 +55,7 @@ let state = {
   pushEnabled: false,
   qrScanner: null,
   qrScanning: false,
+  scannerDismissed: false,
   connecting: false,
   deferredInstallPrompt: null,
 };
@@ -565,10 +566,16 @@ function ensureQrScannerInstance() {
   return state.qrScanner;
 }
 
-async function stopScanner() {
-  if (!state.qrScanner || !state.qrScanning) {
-    state.qrScanning = false;
-    showScanOverlay(false);
+async function stopScanner(options = { dismissed: false }) {
+  if (options.dismissed) {
+    state.scannerDismissed = true;
+  }
+
+  // Hide immediately so UI always responds to "Close Scanner".
+  showScanOverlay(false);
+  state.qrScanning = false;
+
+  if (!state.qrScanner) {
     return;
   }
   try {
@@ -582,11 +589,10 @@ async function stopScanner() {
     // ignore
   }
   state.qrScanner = null;
-  state.qrScanning = false;
-  showScanOverlay(false);
 }
 
-async function startScanner() {
+async function startScanner(options = { force: false }) {
+  if (!options.force && state.scannerDismissed) return;
   if (!canScanQrNow()) {
     showScanOverlay(false);
     showInstallFirstMessage();
@@ -596,6 +602,7 @@ async function startScanner() {
   if (state.qrScanning) return;
   try {
     const scanner = ensureQrScannerInstance();
+    state.scannerDismissed = false;
     showScanOverlay(true);
     setScanStatus("Opening camera...");
     state.qrScanning = true;
@@ -610,7 +617,7 @@ async function startScanner() {
           return;
         }
         setScanStatus("QR detected. Connecting...");
-        await stopScanner();
+        await stopScanner({ dismissed: false });
         await connectWithPayload(payload, JSON.stringify(payload));
       },
       () => {}
@@ -619,7 +626,9 @@ async function startScanner() {
     setScanStatus("Point camera at pairing QR.");
   } catch (err) {
     state.qrScanning = false;
-    showScanOverlay(true);
+    if (!state.scannerDismissed) {
+      showScanOverlay(true);
+    }
     setScanStatus(`Camera error: ${err.message}`);
   }
 }
@@ -667,7 +676,7 @@ async function connectWithPayload(payload, payloadText = "") {
     setPairStatus(`Connection failed: ${err.message}`);
     addMessage("system", `Connection failed: ${err.message}`);
     els.btnEnablePush.hidden = true;
-    await startScanner();
+    await startScanner({ force: true });
   } finally {
     state.connecting = false;
   }
@@ -685,8 +694,8 @@ function connectFromRestoredState() {
 }
 
 function wireEvents() {
-  els.btnOpenScanner.addEventListener("click", startScanner);
-  els.btnStopScan.addEventListener("click", stopScanner);
+  els.btnOpenScanner.addEventListener("click", () => startScanner({ force: true }));
+  els.btnStopScan.addEventListener("click", () => stopScanner({ dismissed: true }));
   els.btnInstall.addEventListener("click", requestInstall);
   els.btnToggleMeta.addEventListener("click", () => {
     els.metaPanel.hidden = !els.metaPanel.hidden;
